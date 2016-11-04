@@ -78,7 +78,17 @@ define([
          * @private
          */
         this.batchTableBinary = batchTableBinary;
+
+        // Extract the hierarchy and remove it from the batch table json
+        var batchTableHierarchy = batchTableJson.HIERARCHY;
+        if (defined(batchTableHierarchy)) {
+            delete batchTableJson.HIERARCHY;
+            batchTableHierarchy = initializeHierarchy(batchTableHierarchy, batchTableBinary);
+        }
+        this._batchTableHierarchy = batchTableHierarchy;
+
         this._batchTableBinaryProperties = Cesium3DTileBatchTable.getBinaryProperties(featuresLength, batchTableJson, batchTableBinary);
+
 
         // PERFORMANCE_IDEA: These parallel arrays probably generate cache misses in get/set color/show
         // and use A LOT of memory.  How can we use less memory?
@@ -114,6 +124,40 @@ define([
 
         this._textureDimensions = textureDimensions;
         this._textureStep = textureStep;
+    }
+
+    function initializeHierarchy(batchTableJson, batchTableBinary) {
+        var classes = batchTableJson.CLASSES;
+        var classIds = batchTableJson.CLASS_ID;
+        var parentIds = batchTableJson.PARENT_ID;
+        if (defined(classes) && defined(classIds) && defined(parentIds)) {
+            var itemsLength = classIds.length;
+            var classesLength = classes.length;
+            var classCounts = new Array(classesLength);
+            arrayFill(classCounts, 0);
+            var classIndexes = new Array(itemsLength);
+            for (var i = 0; i < itemsLength; ++i) {
+                var classId = classIds[i];
+                //>>includeStart('debug', pragmas.debug);
+                if (classId > classesLength) {
+                    throw new DeveloperError('classId ' + i + ' exceeds the number of classes in the batch table.');
+                }
+                //>>includeEnd('debug');
+                classIndexes[i] = classCounts[classId];
+                classCounts[classId]++;
+            }
+
+            // Just edit class values directly to be a typedarray rather than a reference to a binary property?
+            // Issues with vector types?
+
+            return {
+                classes : classes,
+                classIds : classIds,
+                classIndexes : classIndexes,
+                parentIds : parentIds,
+                binaryProperties
+            };
+        }
     }
 
     Cesium3DTileBatchTable.getBinaryProperties = function(featuresLength, json, binary) {
@@ -348,6 +392,22 @@ define([
         }
         //>>includeEnd('debug');
 
+        // var hierarchy = this._batchTableHierarchy;
+        // if (defined(hierarchy)) {
+        //     var instanceIndex = batchId;
+        //     while (instanceIndex !== -1) {
+        //         var classId = hierarchy.classIds[instanceIndex];
+        //         var instanceClass = hierarchy.classes[classId];
+        //         var indexInClass = hierarchy.classIndexes[instanceIndex];
+        //         var values = instanceClass[name]; // TODO : or refer to the instances array?
+        //         if (defined(values)) {
+        //             return values[indexInClass];
+        //         }
+        //         // Recursively check parent class for the property
+        //         instanceIndex = hierarchy.parentIds[instanceIndex];
+        //     }
+        // }
+
         var json = this.batchTableJson;
         return defined(json) && defined(json[name]);
     };
@@ -395,6 +455,23 @@ define([
                 } else {
                     return binaryProperty.type.unpack(typedArray, batchId * componentCount);
                 }
+            }
+        }
+
+        // Check the hierarchy for the property
+        var hierarchy = this._batchTableHierarchy;
+        if (defined(hierarchy)) {
+            var instanceIndex = batchId;
+            while (instanceIndex !== -1) {
+                var classId = hierarchy.classIds[instanceIndex];
+                var instanceClass = hierarchy.classes[classId];
+                var indexInClass = hierarchy.classIndexes[instanceIndex];
+                var values = instanceClass.instances[name];
+                if (defined(values)) {
+                    return values[indexInClass];
+                }
+                // Recursively check parent for the property
+                instanceIndex = hierarchy.parentIds[instanceIndex];
             }
         }
 
@@ -473,9 +550,6 @@ define([
             '} \n';
     }
 
-    /**
-     * @private
-     */
     Cesium3DTileBatchTable.prototype.getVertexShaderCallback = function(handleTranslucent) {
         if (this.featuresLength === 0) {
             return;

@@ -34,6 +34,7 @@ defineSuite([
     var withBatchTableUrl = './Data/Cesium3DTiles/Batched/BatchedWithBatchTable/';
     var withoutBatchTableUrl = './Data/Cesium3DTiles/Batched/BatchedWithoutBatchTable/';
     var batchLengthZeroUrl = './Data/Cesium3DTiles/Batched/BatchedNoBuildings/';
+    var batchTableHierarchyUrl = './Data/Cesium3DTiles/test/BatchTableHierarchy/';
 
     var result = new Color();
 
@@ -623,6 +624,12 @@ defineSuite([
 
             // Re-enable VTF
             ContextLimits._maximumVertexTextureImageUnits = maximumVertexTextureImageUnits;
+        });
+    });
+
+    fit('batch table hierarchy', function() {
+        return Cesium3DTilesTester.loadTileset(scene, batchTableHierarchyUrl).then(function(tileset) {
+            var batchTable = tileset._root.content.batchTable;
         });
     });
 
